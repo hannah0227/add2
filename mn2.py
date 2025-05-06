@@ -1,98 +1,188 @@
 import cv2
+
 from flask import Flask, Response
+
 import RPi.GPIO as GPIO
+
 import time
+
 import numpy as np
 
+
+
 from deep_sort_pytorch.utils.parser import get_config
+
 from deep_sort_pytorch.deep_sort import DeepSort
 
+
+
 def initialize_tracker():
+
     cfg = get_config()
+
     cfg.merge_from_file("deep_sort_pytorch/configs/deep_sort.yaml")
 
+
+
     deepsort = DeepSort(
+
         cfg.DEEPSORT.REID_CKPT,
+
         max_dist=cfg.DEEPSORT.MAX_DIST,
+
         min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+
         nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP,
+
         max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+
         max_age=cfg.DEEPSORT.MAX_AGE,
+
         n_init=cfg.DEEPSORT.N_INIT,
+
         nn_budget=cfg.DEEPSORT.NN_BUDGET,
+
         use_cuda=False
+
     )
+
     return deepsort
 
+
+
 GPIO.setmode(GPIO.BCM)
+
 LED_pin = 2
+
 GPIO.setup(LED_pin, GPIO.OUT)
+
 GPIO.output(LED_pin, GPIO.LOW)
+
+
 
 app = Flask(__name__)
 
+
+
 MODEL_PB = "/home/zoqtmxhs/Desktop/capstone/frozen_inference_graph.pb"
+
 MODEL_PBTXT = "/home/zoqtmxhs/Desktop/capstone/ssd_mobilenet_v2_coco_2018_03_29.pbtxt"
+
 CLASSES_FILE = "/home/zoqtmxhs/Desktop/capstone/object_detection_classes_coco.txt"
 
-try:
-    net = cv2.dnn.readNetFromTensorflow(MODEL_PB, MODEL_PBTXT)
-    print("SSD-MobileNet model loaded successfully.")
-except Exception as e:
-    print(f"Error loading SSD-MobileNet model: {e}")
-    print("Please check the paths to your .pb and .pbtxt files.")
-    exit()
+
 
 try:
-    with open(CLASSES_FILE, 'r') as f:
-        CLASSES = [line.strip() for line in f.readlines()]
-    print(f"{len(CLASSES)} class names loaded successfully.")
+
+    net = cv2.dnn.readNetFromTensorflow(MODEL_PB, MODEL_PBTXT)
+
+    print("SSD-MobileNet model loaded successfully.")
+
 except Exception as e:
-    print(f"Error loading class names file: {e}")
-    print("Please check the path to your class names file.")
+
+    print(f"Error loading SSD-MobileNet model: {e}")
+
+    print("Please check the paths to your .pb and .pbtxt files.")
+
     exit()
+
+
+
+try:
+
+    with open(CLASSES_FILE, 'r') as f:
+
+        CLASSES = [line.strip() for line in f.readlines()]
+
+    print(f"{len(CLASSES)} class names loaded successfully.")
+
+except Exception as e:
+
+    print(f"Error loading class names file: {e}")
+
+    print("Please check the path to your class names file.")
+
+    exit()
+
+
 
 TARGET_CLASSES = ['car', 'motorcycle', 'bicycle']
+
 TARGET_CLASS_IDS = [CLASSES.index(cls) for cls in TARGET_CLASSES if cls in CLASSES]
+
 print(f"Target Class Names for LED control: {TARGET_CLASSES}")
+
 print(f"Corresponding Class IDs: {TARGET_CLASS_IDS}")
+
+
 
 CONFIDENCE_THRESHOLD = 0.3
 
+
+
 tracker = initialize_tracker()
+
 print("DeepSORT tracker initialized.")
 
+
+
 cap = cv2.VideoCapture("/dev/video4", cv2.CAP_V4L2)
+
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+
+
 if not cap.isOpened():
+
     print("Cannot open the camera device /dev/video2. Trying default camera (index 0)...")
+
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+
+
     if not cap.isOpened():
+
         print("Cannot open default camera (index 0) either. Exiting.")
+
         exit()
+
     print("Opened default camera (index 0) instead.")
+
 else:
+
      print("Successfully opened camera device /dev/video2.")
 
 
+
 def generate_frames():
+    print("generate_frames 함수 시작.") # 함수 시작 시 출력
     try:
         while True:
+            print("--- while 루프 시작 ---") # 루프 시작 시 출력
             ret, frame = cap.read()
             if not ret:
-                print("Failed to grab frame, retrying...")
+                print("cap.read() 실패: 프레임을 가져오지 못했습니다.") # cap.read() 실패 시 출력
+                print("Failed to grab frame, retrying...") # 기존 메시지
+                print("--- continue 실행 ---") # continue 직전 출력
                 time.sleep(0.1)
                 continue
 
+            # --- cap.read() 성공 시 실행되는 코드 ---
+            print("cap.read() 성공: 프레임 처리 시작.") # cap.read() 성공 시 출력
+
             h, w, _ = frame.shape
 
+            # --- 객체 탐지 (SSD-MobileNet 사용) ---
             blob = cv2.dnn.blobFromImage(frame, size=(300, 300), swapRB=True, crop=False)
             net.setInput(blob)
             detections = net.forward()
@@ -117,7 +207,9 @@ def generate_frames():
 
                         if class_id in TARGET_CLASS_IDS:
                             current_frame_has_target = True
+            # --- 객체 탐지 끝 ---
 
+            # --- DeepSORT 추적 업데이트 ---
             if current_frame_detections:
                  detections_np = np.array(current_frame_detections)
 
@@ -129,12 +221,16 @@ def generate_frames():
 
             else:
                  tracked_objects = tracker.update(np.empty((0, 4)), np.empty(0), np.empty(0), frame)
+            # --- DeepSORT 추적 업데이트 끝 ---
 
+            # --- LED 제어 ---
             if current_frame_has_target:
                 GPIO.output(LED_pin, GPIO.HIGH)
             else:
                 GPIO.output(LED_pin, GPIO.LOW)
+            # --- LED 제어 끝 ---
 
+            # --- 추적 결과 시각화 (디버깅용 print 추가) ---
             annotated_frame = frame.copy()
 
             for track_info in tracked_objects:
@@ -175,6 +271,9 @@ def generate_frames():
                     cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
                     cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
+            # --- 추적 결과 시각화 끝 ---
+
+            # --- 프레임 인코딩 및 전송 ---
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             if not ret:
                 print("Failed to encode frame.")
@@ -184,6 +283,7 @@ def generate_frames():
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            # --- 프레임 인코딩 및 전송 끝 ---
 
     except Exception as e:
         print(f"Error in generate_frames: {e}")
@@ -192,43 +292,84 @@ def generate_frames():
 
 
 @app.route('/video_feed')
+
 def video_feed():
+
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
+
 @app.route('/')
+
 def index():
+
     return """
+
     <html>
+
       <head>
+
         <title>Real-time SSD-MobileNet & DeepSORT Tracking</title>
+
       </head>
+
       <body>
+
         <h1>Live Camera Feed with SSD-MobileNet & DeepSORT Tracking</h1>
+
         <img src="/video_feed" width="640" height="480">
+
       </body>
+
     </html>
+
     """
 
+
+
 if __name__ == "__main__":
+
     try:
+
         print("Starting Flask app...")
+
         app.run(host='0.0.0.0', port=5000, debug=False)
 
+
+
     except KeyboardInterrupt:
+
         print("\nServer stopped by user (KeyboardInterrupt).")
 
+
+
     except Exception as e:
+
         print(f"\nAn error occurred: {e}")
 
+
+
     finally:
+
         print("Cleaning up resources...")
+
         if 'cap' in locals() and cap.isOpened():
+
              cap.release()
+
              print("Camera released.")
+
         elif 'cap' in locals():
+
              print("Camera was not successfully opened.")
 
+
+
         GPIO.cleanup()
+
         print("GPIO cleaned up.")
 
+
+
         print("Script finished.")
+
