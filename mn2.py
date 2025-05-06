@@ -261,61 +261,67 @@ def generate_frames():
                 GPIO.output(LED_pin, GPIO.LOW)
             # --- LED 제어 끝 ---
 
-            # --- 추적 결과 시각화 (디버깅 print 추가) ---
+            # --- 추적 결과 시각화 (수정된 부분) ---
             annotated_frame = frame.copy()
 
             print(f"--- Starting visualization loop. Number of tracked objects: {len(tracked_objects)} ---")
 
-            for track_info in tracked_objects:
-                 # 이 print가 나오는지 확인하여 시각화 루프의 내부 if 블록으로 진입했는지 봅니다.
-                 print(f"  --- Checking track_info structure for drawing: {track_info} ---") # track_info의 값 출력
-                 if isinstance(track_info, (list, np.ndarray)) and len(track_info) == 6:
-                    print(f"  --- Inside visualization loop inner if block for track_info: {track_info} ---") # if 조건 통과 시 출력
+            # tracked_objects는 리스트이며, 각 요소는 [[x1, y1, x2, y2, track_id, class_id]] 형태의 리스트 또는 [] 형태의 빈 리스트입니다.
+            # 각 요소를 순회하며 [[...]] 형태인 경우에만 그 안의 데이터를 꺼내 사용합니다.
+            for track_entry in tracked_objects: # track_entry는 [[...]] 또는 [] 형태의 리스트
+                 # 이 print가 나오는지 확인하여 시각화 루프의 각 요소를 처리 중인지 봅니다.
+                 print(f"  --- Checking track_entry structure for drawing: {track_entry} ---")
 
-                    # 필요한 정보 추출
-                    # 이 print가 나오는지 확인하여 map(int, ...) 호출 직전까지 도달했는지 봅니다.
-                    print(f"  --- right before map(int, track_info[:4]) --- Raw bbox part: {track_info[:4]}")
-                    x1, y1, x2, y2 = map(int, track_info[:4])
-                    # 이 print가 나오는지 확인하여 map(int, ...) 호출이 성공했는지 봅니다.
-                    print(f"  --- right after map(int, track_info[:4]) --- Int bbox: ({x1}, {y1}, {x2}, {y2})")
+                 # track_entry가 리스트이고 비어있지 않으며, 그 첫 번째 요소가 길이가 6인 배열/리스트인지 확인
+                 if isinstance(track_entry, list) and len(track_entry) > 0 and isinstance(track_entry[0], (list, np.ndarray)) and len(track_entry[0]) == 6:
+                     # 실제 객체 정보는 track_entry 리스트의 첫 번째 요소 안에 있습니다.
+                     track_info = track_entry[0] # <- 여기서 실제 NumPy 배열을 꺼냅니다.
 
+                     # 이 print가 나오는지 확인하여 내부 데이터 처리 블록으로 진입했는지 봅니다.
+                     print(f"  --- Inside visualization loop inner processing block for track_info: {track_info} ---")
 
-                    # 바운딩 박스 유효성 검사
-                    is_valid_bbox = x2 > x1 and y2 > y1
+                     # 필요한 정보 추출
+                     x1, y1, x2, y2 = map(int, track_info[:4]) # 바운딩 박스 좌표 (인덱스 0~3)
+                     track_id = int(track_info[4]) # 추적 ID (인덱스 4)
+                     class_id_from_track = int(track_info[5]) # 클래스 ID (인덱스 5)
 
-                    print(f"Track ID {int(track_info[4])}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
+                     # 바운딩 박스 유효성 검사
+                     is_valid_bbox = x2 > x1 and y2 > y1
 
-                    if not is_valid_bbox:
-                        print(f"Track ID {int(track_info[4])}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
-                        continue
+                     # 이 print들이 나오는지 확인하고 좌표가 유효한지 봅니다.
+                     print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
 
-                    # 이 print가 나오는지 확인하여 그리는 코드를 실행하기 직전까지 도달했는지 봅니다.
-                    print(f"Track ID {int(track_info[4])}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
+                     if not is_valid_bbox:
+                         print(f"Track ID {track_id}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
+                         continue
 
-                    class_id_from_track = int(track_info[5])
-                    class_name = "Unknown"
-                    if 0 <= class_id_from_track < len(CLASSES):
+                     # 이 print가 나오는지 확인하여 그리는 코드를 실행하기 직전까지 도달했는지 봅니다.
+                     print(f"Track ID {track_id}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
+
+                     class_name = "Unknown"
+                     if 0 <= class_id_from_track < len(CLASSES):
                          class_name = CLASSES[class_id_from_track]
-                    else:
+                     else:
                          class_name = f"Class {class_id_from_track}"
 
-                    color = (0, 255, 0)
+                     color = (0, 255, 0)
 
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
-                    label = f"{class_name} ID: {int(track_info[4])}"
+                     label = f"{class_name} ID: {track_id}"
 
-                    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                    text_x = x1
-                    text_y = y1 - baseline
-                    if text_y < text_height:
-                        text_y = y1 + text_height
+                     (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                     text_x = x1
+                     text_y = y1 - baseline
+                     if text_y < text_height:
+                         text_y = y1 + text_height
 
-                    cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
-                    cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                     cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
+                     cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
+                 # else 블록은 [] 형태의 빈 리스트나 예상치 못한 형태의 요소인 경우를 처리합니다.
                  # else:
-                     # print(f"Warning: Skipping unexpected track_info structure: {track_info}") # 필요시 주석 해제
+                     # print(f"Warning: Skipping empty or unexpected track_entry structure: {track_entry}") # 필요시 주석 해제하여 확인
 
             # --- 추적 결과 시각화 끝 ---
 
@@ -329,13 +335,12 @@ def generate_frames():
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            # --- 프레임 인코딩 및 전송 끝 ---
+            # --- Encode and Yield Frame End ---
 
     except Exception as e:
         print(f"Error in generate_frames: {e}")
     finally:
         print("generate_frames generator finished or an error occurred.")
-
 
 @app.route('/video_feed')
 
