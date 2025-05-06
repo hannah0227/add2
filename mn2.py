@@ -73,12 +73,12 @@ if len(TARGET_CLASS_IDS) != len(TARGET_CLASSES):
 print(f"Target Class Names for LED control: {TARGET_CLASSES}")
 print(f"Corresponding Class IDs: {TARGET_CLASS_IDS}")
 
-CONFIDENCE_THRESHOLD = 0.3
+CONFIDENCE_THRESHOLD = 0.4
 
 # --- NEW SETTING ---
 # Set to True to only feed detections of TARGET_CLASSES to the tracker
 # Set to False to feed all detections above CONFIDENCE_THRESHOLD to the tracker
-FILTER_DETECTIONS_BY_TARGET_CLASSES = True # <--- 이 라인입니다! 이 값을 True로 변경하세요.
+FILTER_DETECTIONS_BY_TARGET_CLASSES = True # <--- 이 값을 True로 변경하세요.
 # --- END NEW SETTING ---
 
 # Initialize DeepSORT tracker
@@ -198,58 +198,77 @@ def generate_frames():
             # print(f"[{frame_count}] Tracker Output (tracked_objects): {tracked_objects}")
             # --- End Debugging ---
 
-            # Iterate over the array of tracked objects (the first element of the tuple)
-            if isinstance(tracked_objects, tuple) and len(tracked_objects) > 0 and isinstance(tracked_objects[0], np.ndarray):
-                 tracked_objects_array = tracked_objects[0]
-
-                 for track_info in tracked_objects_array:
-                      if isinstance(track_info, (list, np.ndarray)) and len(track_info) >= 6:
-                         x1_float, y1_float, x2_float, y2_float = track_info[:4]
-                         x1 = int(x1_float)
-                         y1 = int(y1_float)
-                         x2 = int(x2_float)
-                         y2 = int(y2_float)
-                         track_id = int(track_info[4])
-                         class_id_from_track = int(track_info[5])
-
-                         is_valid_bbox = x2 > x1 and y2 > y1
-
-                         if not is_valid_bbox:
-                             # print(f"[{frame_count}] Track ID {track_id}: Skipping drawing due to invalid bbox (x2 <= x1 or y2 <= y1). Coords: ({x1}, {y1}, {x2}, {y2})")
-                             continue
-
-                         # print(f"[{frame_count}] Drawing Track ID {track_id}, Class ID {class_id_from_track}, Coords ({x1}, {y1}, {x2}, {y2})")
+            # --- START FIX for ([], []) output ---
+            # Iterate over the actual tracked items, which are usually in the first element of the tuple
+            tracked_items_to_draw = []
+            if isinstance(tracked_objects, tuple) and len(tracked_objects) > 0:
+                 # Get the first element, which should contain the tracks (either list or np.ndarray)
+                 potential_tracked_items = tracked_objects[0]
+                 # Check if the first element is an iterable type we can loop through
+                 if isinstance(potential_tracked_items, (list, np.ndarray)):
+                     tracked_items_to_draw = potential_tracked_items
+                 # else: print(f"[{frame_count}] Debug: First element of tracked_objects is not list/ndarray: {type(potential_tracked_items)}")
 
 
-                         class_name = "Unknown"
-                         if 0 <= class_id_from_track < len(CLASSES):
-                             class_name = CLASSES[class_id_from_track]
-                         else:
-                             class_name = f"Class {class_id_from_track}"
-                             print(f"[{frame_count}] Warning: Track ID {track_id} has unexpected class ID {class_id_from_track}.") # Keep this warning for unexpected IDs
+            # Check if we got a valid list/array of tracked items AND if it's not empty
+            if isinstance(tracked_items_to_draw, (list, np.ndarray)) and len(tracked_items_to_draw) > 0:
+                # Loop over the actual tracked items
+                for track_info in tracked_items_to_draw:
+                    # track_info should be a single track: [x1, y1, x2, y2, track_id, class_id]
+                    # Ensure track_info has the expected format (at least 6 elements)
+                    if isinstance(track_info, (list, np.ndarray)) and len(track_info) >= 6:
+                        x1_float, y1_float, x2_float, y2_float = track_info[:4]
+                        x1 = int(x1_float)
+                        y1 = int(y1_float)
+                        x2 = int(x2_float)
+                        y2 = int(y2_float)
+                        track_id = int(track_info[4])
+                        class_id_from_track = int(track_info[5])
 
-                         color = (0, 255, 0) # Green
+                        is_valid_bbox = x2 > x1 and y2 > y1
 
-                         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                        if not is_valid_bbox:
+                            # print(f"[{frame_count}] Track ID {track_id}: Skipping drawing due to invalid bbox (x2 <= x1 or y2 <= y1). Coords: ({x1}, {y1}, {x2}, {y2})")
+                            continue
 
-                         label = f"{class_name} ID: {track_id}"
+                        # print(f"[{frame_count}] Drawing Track ID {track_id}, Class ID {class_id_from_track}, Coords ({x1}, {y1}, {x2}, {y2})")
 
-                         (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                         text_x = x1
-                         text_y = y1 - baseline
-                         if text_y < text_height:
-                              text_y = y1 + text_height
+                        class_name = "Unknown"
+                        if 0 <= class_id_from_track < len(CLASSES):
+                            class_name = CLASSES[class_id_from_track]
+                        else:
+                            class_name = f"Class {class_id_from_track}"
+                            # print(f"[{frame_count}] Warning: Track ID {track_id} has unexpected class ID {class_id_from_track}.") # Keep this warning for unexpected IDs
 
-                         cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
-                         cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                        color = (0, 255, 0) # Green
 
-                      else:
-                          # print(f"[{frame_count}] Warning: Unexpected track_info format for an item in the array: {track_info}")
-                          pass
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
-            # If tracked_objects is not the expected tuple format
-            elif tracked_objects is not None:
-                 print(f"[{frame_count}] Warning: tracked_objects is not the expected tuple format (np.ndarray, list): {tracked_objects}")
+                        label = f"{class_name} ID: {track_id}"
+
+                        (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                        text_x = x1
+                        text_y = y1 - baseline
+                        if text_y < text_height:
+                            text_y = y1 + text_height
+
+                        cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
+                        cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+                    # --- Debugging for unexpected format within the list/array ---
+                    # This should ideally not happen if the first element is list/ndarray of tracks
+                    # else:
+                    #     print(f"[{frame_count}] Warning: Unexpected track_info format for an item in the list/array: {track_info}")
+                    # --- End Debugging ---
+
+
+            # --- Warning for unexpected TOP-LEVEL formats ---
+            # Only print a warning if the output is NOT a tuple or if the first element is NOT list/ndarray
+            # ([], []) 형태는 drawing loop에서 자연스럽게 스킵되므로 경고를 띄우지 않습니다.
+            elif not (isinstance(tracked_objects, tuple) and len(tracked_objects) > 0 and isinstance(tracked_objects[0], (list, np.ndarray))):
+                 print(f"[{frame_count}] Warning: tracked_objects has unexpected format: {tracked_objects}")
+            # --- END Warning ---
+            # --- END FIX for ([], []) output ---
 
 
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
