@@ -107,7 +107,7 @@ else:
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if cap.isOpened():
         print("Opened default camera (index 0) instead.")
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPEG'))
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         # print("Camera properties set for default camera.") # Added debug print
@@ -205,79 +205,95 @@ def generate_frames():
             # --- END: Enhanced Debugging for Drawing ---
 
 
-            for track_info in tracked_objects:
-                 # DeepSORT 출력 형식은 일반적으로 [x1, y1, x2, y2, track_id, class_id] 입니다.
-                 # track_info가 예상 형식을 가졌는지 확인합니다.
-                 if isinstance(track_info, (list, np.ndarray)) and len(track_info) >= 6:
-                    # 좌표, track_id, class_id를 추출합니다.
-                    # 좌표를 그림 그리기에 필요한 정수로 변환합니다.
-                    x1_float, y1_float, x2_float, y2_float = track_info[:4]
-                    x1 = int(x1_float)
-                    y1 = int(y1_float)
-                    x2 = int(x2_float)
-                    y2 = int(y2_float)
-                    track_id = int(track_info[4])
-                    # class_id는 추적 업데이트 시 검출기에서 받은 값을 사용합니다.
-                    class_id_from_track = int(track_info[5])
+            # --- FIX START: Iterate over the array of tracked objects ---
+            # tracked_objects는 튜플 (np.array([...]), []) 형태이므로, np.array 부분을 순회해야 합니다.
+            # 튜플이 올바른 형식이고 첫 번째 요소가 NumPy 배열인지 확인합니다.
+            if isinstance(tracked_objects, tuple) and len(tracked_objects) > 0 and isinstance(tracked_objects[0], np.ndarray):
+                 tracked_objects_array = tracked_objects[0]
+                 # print(f"[{frame_count}] Processing {len(tracked_objects_array)} tracks from the array.") # Added debug print
 
-                    # --- START: More Detailed Drawing Debugging ---
-                    # 원본 부동 소수점 좌표와 정수 변환 후 좌표를 출력합니다.
-                    print(f"[{frame_count}] Track ID {track_id}: Raw Coords = ({x1_float:.2f}, {y1_float:.2f}, {x2_float:.2f}, {y2_float:.2f})")
-                    print(f"[{frame_count}] Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2})")
-                    # 바운딩 박스가 유효한지 (x2 > x1 이고 y2 > y1 인지) 확인합니다.
-                    is_valid_bbox = x2 > x1 and y2 > y1
+                 # NumPy 배열 안의 각 행(각 추적 대상 정보)을 순회합니다.
+                 for track_info in tracked_objects_array:
+                      # 이제 track_info는 단일 추적 대상입니다: [x1, y1, x2, y2, track_id, class_id]
+                      # track_info가 예상 형식을 가졌는지 확인합니다 (최소 6개 요소).
+                      if isinstance(track_info, (list, np.ndarray)) and len(track_info) >= 6:
+                         # Extract coordinates, track_id, and class_id
+                         # Convert coordinates to integers needed for drawing
+                         x1_float, y1_float, x2_float, y2_float = track_info[:4]
+                         x1 = int(x1_float)
+                         y1 = int(y1_float)
+                         x2 = int(x2_float)
+                         y2 = int(y2_float)
+                         track_id = int(track_info[4])
+                         class_id_from_track = int(track_info[5])
 
-                    if not is_valid_bbox:
-                        # 바운딩 박스가 유효하지 않으면 그리기를 건너뛴다고 출력합니다.
-                        print(f"[{frame_count}] Track ID {track_id}: Skipping drawing due to invalid bbox (x2 <= x1 or y2 <= y1)")
-                        continue # 이 추적 대상은 그리기를 건너뜝니다.
-                    else:
-                         # 바운딩 박스가 유효하면 그리는 중이라고 출력합니다.
-                         print(f"[{frame_count}] Track ID {track_id}: Bbox is valid. Drawing.")
+                         # --- START: More Detailed Drawing Debugging ---
+                         # 원본 부동 소수점 좌표와 정수 변환 후 좌표를 출력합니다.
+                         # print(f"[{frame_count}] Track ID {track_id}: Raw Coords = ({x1_float:.2f}, {y1_float:.2f}, {x2_float:.2f}, {y2_float:.2f})")
+                         # print(f"[{frame_count}] Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2})")
+                         # 바운딩 박스가 유효한지 (x2 > x1 이고 y2 > y1 인지) 확인합니다.
+                         is_valid_bbox = x2 > x1 and y2 > y1
 
-                    # --- END: More Detailed Drawing Debugging ---
+                         if not is_valid_bbox:
+                             # 바운딩 박스가 유효하지 않으면 그리기를 건너뛴다고 출력합니다.
+                             print(f"[{frame_count}] Track ID {track_id}: Skipping drawing due to invalid bbox (x2 <= x1 or y2 <= y1). Coords: ({x1}, {y1}, {x2}, {y2})") # Added coords to message
+                             continue # 이 추적 대상은 그리기를 건너뜁니다.
+                         else:
+                              # 바운딩 박스가 유효하면 그리는 중이라고 출력합니다.
+                              # print(f"[{frame_count}] Track ID {track_id}: Bbox is valid. Drawing.")
+                              pass # 간결성을 위해 자주 뜨는 성공 메시지는 주석 처리
 
-                    # 클래스 이름을 가져옵니다.
-                    class_name = "Unknown" # 기본 클래스 이름
-                    if 0 <= class_id_from_track < len(CLASSES):
-                        class_name = CLASSES[class_id_from_track]
-                    else:
-                        # 클래스 ID가 범위를 벗어나는 경우를 처리합니다.
-                        class_name = f"Class {class_id_from_track}"
-                        print(f"[{frame_count}] Warning: Track ID {track_id} has unexpected class ID {class_id_from_track}.")
+                         # --- END: More Detailed Drawing Debugging ---
 
-
-                    # 색상 정의 (녹색)
-                    color = (0, 255, 0)
-
-                    # 바운딩 박스 사각형을 그립니다.
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-
-                    # 텍스트 라벨을 준비합니다.
-                    label = f"{class_name} ID: {track_id}"
-
-                    # 텍스트 배경 사각형 크기를 가져옵니다.
-                    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                    # 텍스트 위치를 바운딩 박스 바로 위로 설정합니다.
-                    text_x = x1
-                    text_y = y1 - baseline
-                    # 텍스트가 프레임 위로 넘어가지 않도록 조정합니다.
-                    if text_y < text_height:
-                         text_y = y1 + text_height
-
-                    # 텍스트 배경 사각형을 그립니다.
-                    cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
-                    # 텍스트를 그립니다.
-                    cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-                 # --- START: Debugging for unexpected track_info format ---
-                 # 예상치 못한 track_info 형식이 들어온 경우 경고를 출력합니다.
-                 else:
-                     print(f"[{frame_count}] Warning: Unexpected track_info format: {track_info}")
-                 # --- END: Debugging for unexpected track_info format ---
+                         # Get class name
+                         class_name = "Unknown" # 기본 클래스 이름
+                         if 0 <= class_id_from_track < len(CLASSES):
+                             class_name = CLASSES[class_id_from_track]
+                         else:
+                             # 클래스 ID가 범위를 벗어나는 경우를 처리합니다.
+                             class_name = f"Class {class_id_from_track}"
+                             print(f"[{frame_count}] Warning: Track ID {track_id} has unexpected class ID {class_id_from_track}.")
 
 
-            # 프레임을 JPEG로 인코딩합니다.
+                         # Define color (Green)
+                         color = (0, 255, 0)
+
+                         # Draw bounding box rectangle
+                         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+
+                         # Prepare text label
+                         label = f"{class_name} ID: {track_id}"
+
+                         # Get text size for background rectangle
+                         (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                         # Position the text slightly above the bounding box
+                         text_x = x1
+                         text_y = y1 - baseline
+                         # Adjust text_y if it's going above the frame top
+                         if text_y < text_height:
+                              text_y = y1 + text_height
+
+                         # Draw text background rectangle
+                         cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
+                         # Draw text
+                         cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+                      # --- START: Debugging for unexpected track_info format ---
+                      # 예상치 못한 track_info 형식이 들어온 경우 경고를 출력합니다. (튜플 안의 배열 항목)
+                      else:
+                          print(f"[{frame_count}] Warning: Unexpected track_info format for an item in the array: {track_info}")
+                      # --- END: Debugging for unexpected track_info format ---
+
+            # --- START: Debugging if tracked_objects is not the expected tuple format ---
+            # tracked_objects가 (np.ndarray, list) 형태의 튜플이 아닌 경우 경고를 출력합니다.
+            elif tracked_objects is not None: # None인 경우는 무시 (업데이트 실패 등)
+                 print(f"[{frame_count}] Warning: tracked_objects is not the expected tuple format (np.ndarray, list): {tracked_objects}")
+            # --- END: Debugging if tracked_objects is not the expected tuple format ---
+
+            # --- FIX END ---
+
+
+            # Encode frame to JPEG
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             if not ret:
                 print(f"[{frame_count}] Failed to encode frame.") # Added frame_count
@@ -285,7 +301,7 @@ def generate_frames():
 
             frame_bytes = buffer.tobytes()
 
-            # Flask 스트림을 위해 프레임을 Yield 합니다.
+            # Yield frame for Flask stream
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
