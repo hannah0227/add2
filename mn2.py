@@ -162,7 +162,6 @@ else:
 
      print("Successfully opened camera device /dev/video2.")
 
-
 def generate_frames():
     print("generate_frames function started.")
     try:
@@ -259,69 +258,83 @@ def generate_frames():
                 GPIO.output(LED_pin, GPIO.HIGH)
             else:
                 GPIO.output(LED_pin, GPIO.LOW)
-            # --- LED 제어 끝 ---
+            # --- LED Control End ---
 
-            # --- 추적 결과 시각화 (수정된 부분) ---
+            # --- 추적 결과 시각화 (수정된 부분 - 평탄화 로직 추가) ---
             annotated_frame = frame.copy()
 
-            print(f"--- Starting visualization loop. Number of tracked objects: {len(tracked_objects)} ---")
+            print(f"--- Starting visualization loop. Number of tracked objects containers: {len(tracked_objects)} ---")
 
-            # tracked_objects는 리스트이며, 각 요소는 [[x1, y1, x2, y2, track_id, class_id]] 형태의 리스트 또는 [] 형태의 빈 리스트입니다.
-            # 각 요소를 순회하며 [[...]] 형태인 경우에만 그 안의 데이터를 꺼내 사용합니다.
-            for track_entry in tracked_objects: # track_entry는 [[...]] 또는 [] 형태의 리스트
-                 # 이 print가 나오는지 확인하여 시각화 루프의 각 요소를 처리 중인지 봅니다.
-                 print(f"  --- Checking track_entry structure for drawing: {track_entry} ---")
+            # DeepSORT 반환 결과 (tracked_objects)의 복잡한 구조를 평탄화하여
+            # 실제 객체 정보를 담은 [x1, y1, x2, y2, track_id, class_id] 형태의 배열들만 모읍니다.
+            all_track_arrays = []
+            for track_entry in tracked_objects: # tracked_objects 리스트의 각 요소 ([[...],...] 또는 []) 순회
+                 # 이 print는 tracked_objects 리스트의 각 요소가 어떤 형태인지 보여줍니다.
+                 print(f"  --- Processing track_entry container: {track_entry} ---")
 
-                 # track_entry가 리스트이고 비어있지 않으며, 그 첫 번째 요소가 길이가 6인 배열/리스트인지 확인
-                 if isinstance(track_entry, list) and len(track_entry) > 0 and isinstance(track_entry[0], (list, np.ndarray)) and len(track_entry[0]) == 6:
-                     # 실제 객체 정보는 track_entry 리스트의 첫 번째 요소 안에 있습니다.
-                     track_info = track_entry[0] # <- 여기서 실제 NumPy 배열을 꺼냅니다.
+                 # track_entry가 비어있지 않은 리스트인지 확인
+                 if isinstance(track_entry, list) and len(track_entry) > 0:
+                     # track_entry 리스트 안의 실제 객체 정보 배열들을 순회
+                     for inner_item in track_entry: # inner_item은 [x1, y1, x2, y2, track_id, class_id] 배열 형태
+                         # inner_item이 실제로 예상하는 길이가 6인 배열/리스트인지 최종 확인
+                         if isinstance(inner_item, (list, np.ndarray)) and len(inner_item) == 6:
+                              # 유효한 객체 정보 배열을 평탄화된 리스트에 추가
+                              all_track_arrays.append(inner_item)
+                              print(f"    --- Added valid track array to draw: {inner_item} ---")
+                         # else:
+                             # print(f"    --- Warning: Skipping inner item with unexpected structure or length: {inner_item} ---") # 필요시 주석 해제
 
-                     # 이 print가 나오는지 확인하여 내부 데이터 처리 블록으로 진입했는지 봅니다.
-                     print(f"  --- Inside visualization loop inner processing block for track_info: {track_info} ---")
-
-                     # 필요한 정보 추출
-                     x1, y1, x2, y2 = map(int, track_info[:4]) # 바운딩 박스 좌표 (인덱스 0~3)
-                     track_id = int(track_info[4]) # 추적 ID (인덱스 4)
-                     class_id_from_track = int(track_info[5]) # 클래스 ID (인덱스 5)
-
-                     # 바운딩 박스 유효성 검사
-                     is_valid_bbox = x2 > x1 and y2 > y1
-
-                     # 이 print들이 나오는지 확인하고 좌표가 유효한지 봅니다.
-                     print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
-
-                     if not is_valid_bbox:
-                         print(f"Track ID {track_id}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
-                         continue
-
-                     # 이 print가 나오는지 확인하여 그리는 코드를 실행하기 직전까지 도달했는지 봅니다.
-                     print(f"Track ID {track_id}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
-
-                     class_name = "Unknown"
-                     if 0 <= class_id_from_track < len(CLASSES):
-                         class_name = CLASSES[class_id_from_track]
-                     else:
-                         class_name = f"Class {class_id_from_track}"
-
-                     color = (0, 255, 0)
-
-                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-
-                     label = f"{class_name} ID: {track_id}"
-
-                     (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                     text_x = x1
-                     text_y = y1 - baseline
-                     if text_y < text_height:
-                         text_y = y1 + text_height
-
-                     cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
-                     cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-                 # else 블록은 [] 형태의 빈 리스트나 예상치 못한 형태의 요소인 경우를 처리합니다.
+                 # else 블록은 [] 형태의 빈 리스트인 경우를 처리합니다.
                  # else:
-                     # print(f"Warning: Skipping empty or unexpected track_entry structure: {track_entry}") # 필요시 주석 해제하여 확인
+                     # print(f"  --- Skipping empty track_entry container: {track_entry} ---") # 필요시 주석 해제
+
+
+            print(f"--- Flattened track arrays ready for drawing: {len(all_track_arrays)} ---") # 실제로 그릴 객체 수
+
+            # 이제 평탄화된 리스트 (all_track_arrays)를 순회하며 바운딩 박스를 그립니다.
+            for track_info in all_track_arrays: # track_info는 이제 [x1, y1, x2, y2, track_id, class_id] 배열 형태
+                 # 이 print는 실제로 그릴 각 객체 정보를 보여줍니다.
+                 print(f"  --- Drawing track_info: {track_info} ---")
+
+                 # 필요한 정보 추출
+                 x1, y1, x2, y2 = map(int, track_info[:4]) # 바운딩 박스 좌표 (인덱스 0~3)
+                 track_id = int(track_info[4]) # 추적 ID (인덱스 4)
+                 class_id_from_track = int(track_info[5]) # 클래스 ID (인덱스 5)
+
+                 # 바운딩 박스 유효성 검사
+                 is_valid_bbox = x2 > x1 and y2 > y1
+
+                 # 이 print들이 나오는지 확인하고 좌표가 유효한지 봅니다.
+                 print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
+
+                 if not is_valid_bbox:
+                     print(f"Track ID {track_id}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
+                     continue
+
+                 # 이 print가 나오면 바운딩 박스와 라벨이 그려져야 합니다!
+                 print(f"Track ID {track_id}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
+
+                 class_name = "Unknown"
+                 if 0 <= class_id_from_track < len(CLASSES):
+                     class_name = CLASSES[class_id_from_track]
+                 else:
+                     class_name = f"Class {class_id_from_track}"
+
+                 color = (0, 255, 0)
+
+                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+
+                 label = f"{class_name} ID: {track_id}"
+
+                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                 text_x = x1
+                 text_y = y1 - baseline
+                 if text_y < text_height:
+                     text_y = y1 + text_height
+
+                 cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
+                 cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
 
             # --- 추적 결과 시각화 끝 ---
 
