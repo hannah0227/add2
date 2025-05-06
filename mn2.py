@@ -198,22 +198,20 @@ def generate_frames():
 
             detections = detections[0, 0]
 
-            # --- 객체 탐지 결과 필터링 루프 (디버깅 print 추가) ---
             print(f"--- Starting detection filtering loop. Number of raw detections: {len(detections)} ---")
 
-            # detection 변수의 실제 내용을 확인하기 위해 루프 안에 print 추가
             for detection in detections:
-                # 각 detection의 raw 값 출력 (shape (7,) 형태)
-                print(f"Processing detection: {detection}")
+                # print(f"Processing detection: {detection}") # 필요시 주석 해제하여 각 탐지 결과 확인
 
                 confidence = detection[2]
                 class_id = int(detection[1])
 
-                print(f"  Confidence: {confidence:.2f}, Class ID: {class_id}")
+                # print(f"  Confidence: {confidence:.2f}, Class ID: {class_id}") # 필요시 주석 해제
 
                 if confidence > CONFIDENCE_THRESHOLD and class_id < len(CLASSES):
-                    print(f"  Detection passed confidence/class filter ({confidence:.2f} > {CONFIDENCE_THRESHOLD}, {class_id} < {len(CLASSES)}). Calculating bbox...")
-                    # 여기서 오류가 발생할 가능성이 높습니다.
+                    # print(f"  Detection passed confidence/class filter. Calculating bbox...") # 필요시 주석 해제
+
+                    # --- 이 아래 코드에서 오류 발생 가능성 ---
                     # 이 print가 나오는지 확인하여 좌표 계산 직전까지 도달했는지 봅니다.
                     print(f"  --- right before bbox calculation (using w={w}, h={h}) ---")
                     x1 = int(detection[3] * w)
@@ -224,23 +222,19 @@ def generate_frames():
                     print(f"  --- right after bbox calculation ({x1}, {y1}, {x2}, {y2}) ---")
 
 
-                    print(f"  Calculated bbox: ({x1}, {y1}, {x2}, {y2})")
-
                     if x2 > x1 and y2 > y1:
-                        print(f"  Bbox is valid ({x1}, {y1}, {x2}, {y2}). Appending detection.")
+                        # print(f"  Bbox is valid. Appending detection.") # 필요시 주석 해제
                         current_frame_detections.append([x1, y1, x2, y2, confidence, class_id])
 
                         if class_id in TARGET_CLASS_IDS:
                             current_frame_has_target = True
-                            print("  Target class detected in this frame.")
-                    else:
-                         print(f"  Bbox is invalid ({x1}, {y1}, {x2}, {y2}). Skipping.")
+                            # print("  Target class detected in this frame.") # 필요시 주석 해제
+                    # else:
+                         # print(f"  Bbox is invalid ({x1}, {y1}, {x2}, {y2}). Skipping.") # 필요시 주석 해제
                 # else:
-                     # 신뢰도/클래스 필터에 걸린 탐지 결과는 이 print를 출력 (옵션)
-                     # print(f"  Detection failed confidence/class filter (confidence={confidence:.2f}, class_id={class_id}). Skipping.")
+                     # print(f"  Detection failed confidence/class filter (confidence={confidence:.2f}, class_id={class_id}).") # 필요시 주석 해제
 
             print(f"--- Finished detection filtering loop. Filtered detections count: {len(current_frame_detections)} ---")
-            # --- 객체 탐지 결과 필터링 루프 끝 ---
 
 
             # --- DeepSORT 추적 업데이트 ---
@@ -267,26 +261,38 @@ def generate_frames():
                 GPIO.output(LED_pin, GPIO.LOW)
             # --- LED 제어 끝 ---
 
-            # --- 추적 결과 시각화 ---
+            # --- 추적 결과 시각화 (디버깅 print 추가) ---
             annotated_frame = frame.copy()
 
-            for track_info in tracked_objects:
-                 if isinstance(track_info, (list, np.ndarray)) and len(track_info) == 6:
-                    x1, y1, x2, y2 = map(int, track_info[:4])
-                    track_id = int(track_info[4])
-                    class_id_from_track = int(track_info[5])
+            print(f"--- Starting visualization loop. Number of tracked objects: {len(tracked_objects)} ---")
 
+            for track_info in tracked_objects:
+                 # 이 print가 나오는지 확인하여 시각화 루프의 내부 if 블록으로 진입했는지 봅니다.
+                 print(f"  --- Checking track_info structure for drawing: {track_info} ---") # track_info의 값 출력
+                 if isinstance(track_info, (list, np.ndarray)) and len(track_info) == 6:
+                    print(f"  --- Inside visualization loop inner if block for track_info: {track_info} ---") # if 조건 통과 시 출력
+
+                    # 필요한 정보 추출
+                    # 이 print가 나오는지 확인하여 map(int, ...) 호출 직전까지 도달했는지 봅니다.
+                    print(f"  --- right before map(int, track_info[:4]) --- Raw bbox part: {track_info[:4]}")
+                    x1, y1, x2, y2 = map(int, track_info[:4])
+                    # 이 print가 나오는지 확인하여 map(int, ...) 호출이 성공했는지 봅니다.
+                    print(f"  --- right after map(int, track_info[:4]) --- Int bbox: ({x1}, {y1}, {x2}, {y2})")
+
+
+                    # 바운딩 박스 유효성 검사
                     is_valid_bbox = x2 > x1 and y2 > y1
 
-                    print(f"Track ID {track_id}: Raw Coords = ({track_info[0]:.2f}, {track_info[1]:.2f}, {track_info[2]:.2f}, {track_info[3]:.2f})")
-                    print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
+                    print(f"Track ID {int(track_info[4])}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
 
                     if not is_valid_bbox:
-                        print(f"Track ID {track_id}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
+                        print(f"Track ID {int(track_info[4])}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
                         continue
 
-                    print(f"Track ID {track_id}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
+                    # 이 print가 나오는지 확인하여 그리는 코드를 실행하기 직전까지 도달했는지 봅니다.
+                    print(f"Track ID {int(track_info[4])}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
 
+                    class_id_from_track = int(track_info[5])
                     class_name = "Unknown"
                     if 0 <= class_id_from_track < len(CLASSES):
                          class_name = CLASSES[class_id_from_track]
@@ -297,7 +303,7 @@ def generate_frames():
 
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
-                    label = f"{class_name} ID: {track_id}"
+                    label = f"{class_name} ID: {int(track_info[4])}"
 
                     (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
                     text_x = x1
@@ -307,6 +313,9 @@ def generate_frames():
 
                     cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
                     cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+                 # else:
+                     # print(f"Warning: Skipping unexpected track_info structure: {track_info}") # 필요시 주석 해제
 
             # --- 추적 결과 시각화 끝 ---
 
@@ -326,7 +335,6 @@ def generate_frames():
         print(f"Error in generate_frames: {e}")
     finally:
         print("generate_frames generator finished or an error occurred.")
-
 
 
 @app.route('/video_feed')
