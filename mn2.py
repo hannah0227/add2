@@ -62,7 +62,7 @@ CONFIDENCE_THRESHOLD = 0.3
 tracker = initialize_tracker()
 print("DeepSORT tracker initialized.")
 
-cap = cv2.VideoCapture("/dev/video2", cv2.CAP_V4L2)
+cap = cv2.VideoCapture("/dev/video4", cv2.CAP_V4L2)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -80,6 +80,7 @@ if not cap.isOpened():
     print("Opened default camera (index 0) instead.")
 else:
      print("Successfully opened camera device /dev/video2.")
+
 
 def generate_frames():
     try:
@@ -129,35 +130,50 @@ def generate_frames():
             else:
                  tracked_objects = tracker.update(np.empty((0, 4)), np.empty(0), np.empty(0), frame)
 
-
             if current_frame_has_target:
                 GPIO.output(LED_pin, GPIO.HIGH)
             else:
                 GPIO.output(LED_pin, GPIO.LOW)
 
-
             annotated_frame = frame.copy()
 
-            for track in tracked_objects:
-                bbox = track.to_tlbr()
-                track_id = track.track_id
-                try:
-                     class_name = CLASSES[track.class_id] if track.class_id < len(CLASSES) else f"Class {track.class_id}"
-                except AttributeError:
-                     class_name = "Unknown"
+            for track_info in tracked_objects:
+                 if isinstance(track_info, (list, np.ndarray)) and len(track_info) == 6:
+                    x1, y1, x2, y2 = map(int, track_info[:4])
+                    track_id = int(track_info[4])
+                    class_id_from_track = int(track_info[5])
 
+                    is_valid_bbox = x2 > x1 and y2 > y1
 
-                x1, y1, x2, y2 = map(int, bbox)
+                    print(f"Track ID {track_id}: Raw Coords = ({track_info[0]:.2f}, {track_info[1]:.2f}, {track_info[2]:.2f}, {track_info[3]:.2f})")
+                    print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
 
-                color = (0, 255, 0)
+                    if not is_valid_bbox:
+                        print(f"Track ID {track_id}: Skipping drawing due to invalid bbox (x2<x1 or y2<y1)")
+                        continue
 
-                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                    print(f"Track ID {track_id}: Drawing bbox and label at ({x1}, {y1}) to ({x2}, {y2})")
 
-                label = f"{class_name} ID: {track_id}"
+                    class_name = "Unknown"
+                    if 0 <= class_id_from_track < len(CLASSES):
+                         class_name = CLASSES[class_id_from_track]
+                    else:
+                         class_name = f"Class {class_id_from_track}"
 
-                (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(annotated_frame, (x1, y1 - text_height - baseline), (x1 + text_width, y1), color, -1)
-                cv2.putText(annotated_frame, label, (x1, y1 - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                    color = (0, 255, 0)
+
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+
+                    label = f"{class_name} ID: {track_id}"
+
+                    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                    text_x = x1
+                    text_y = y1 - baseline
+                    if text_y < text_height:
+                        text_y = y1 + text_height
+
+                    cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
+                    cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             if not ret:
