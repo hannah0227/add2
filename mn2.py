@@ -162,35 +162,48 @@ else:
 
      print("Successfully opened camera device /dev/video2.")
 
-
-
 def generate_frames():
-    print("generate_frames 함수 시작.") # 함수 시작 시 출력
+    print("generate_frames function started.") # 함수 시작 시 출력
     try:
         while True:
-            print("--- while 루프 시작 ---") # 루프 시작 시 출력
+            print("--- while loop start ---") # 루프 시작 시 출력
             ret, frame = cap.read()
             if not ret:
-                print("cap.read() 실패: 프레임을 가져오지 못했습니다.") # cap.read() 실패 시 출력
+                print("cap.read() failed: Failed to get frame.") # cap.read() 실패 시 출력
                 print("Failed to grab frame, retrying...") # 기존 메시지
-                print("--- continue 실행 ---") # continue 직전 출력
+                print("--- executing continue ---") # continue 직전 출력
                 time.sleep(0.1)
                 continue
 
-            # --- cap.read() 성공 시 실행되는 코드 ---
-            print("cap.read() 성공: 프레임 처리 시작.") # cap.read() 성공 시 출력
+            print("cap.read() successful: Starting frame processing.") # cap.read() 성공 시 출력
 
-            h, w, _ = frame.shape
+            # cap.read() 성공 직후에 실행되어야 할 다음 코드
+            # 이 줄이 문제일 수 있으므로, 이 직전/직후를 확인합니다.
 
-            # --- 객체 탐지 (SSD-MobileNet 사용) ---
+            # --- Check frame properties ---
+            # 여기서 문제가 발생한다면 이 print는 나오지 않습니다.
+            print(f"Frame shape before blob: {frame.shape}, dtype: {frame.dtype}")
+            # --- End check frame properties ---
+
+
+            # --- Object Detection (using SSD-MobileNet) ---
+            # 이 print가 나오는지 확인하여 blobFromImage 호출까지 도달했는지 봅니다.
+            print("--- right before blobFromImage call ---")
             blob = cv2.dnn.blobFromImage(frame, size=(300, 300), swapRB=True, crop=False)
+            # 이 print가 나오는지 확인하여 blobFromImage 호출이 성공했는지 봅니다.
+            print("--- right after blobFromImage call ---")
+
             net.setInput(blob)
             detections = net.forward()
+            # 이 print가 나오는지 확인하여 net.forward()까지 도달했는지 봅니다.
+            print(f"--- right after net.forward(), detections shape: {detections.shape} ---")
+
 
             current_frame_detections = []
             current_frame_has_target = False
 
             detections = detections[0, 0]
+
 
             for detection in detections:
                 confidence = detection[2]
@@ -207,9 +220,11 @@ def generate_frames():
 
                         if class_id in TARGET_CLASS_IDS:
                             current_frame_has_target = True
-            # --- 객체 탐지 끝 ---
+            # --- Object Detection End ---
 
-            # --- DeepSORT 추적 업데이트 ---
+            # --- DeepSORT Tracking Update ---
+            # 이 print가 나오는지 확인하여 DeepSORT 업데이트까지 도달했는지 봅니다.
+            print(f"Frame {int(time.time())}: DeepSORT input object count = {len(current_frame_detections)}")
             if current_frame_detections:
                  detections_np = np.array(current_frame_detections)
 
@@ -221,16 +236,18 @@ def generate_frames():
 
             else:
                  tracked_objects = tracker.update(np.empty((0, 4)), np.empty(0), np.empty(0), frame)
-            # --- DeepSORT 추적 업데이트 끝 ---
+            # 이 print가 나오는지 확인하여 DeepSORT 업데이트 후까지 도달했는지 봅니다.
+            print(f"Frame {int(time.time())}: DeepSORT tracked object count = {len(tracked_objects)}")
+            # --- DeepSORT Tracking Update End ---
 
-            # --- LED 제어 ---
+            # --- LED Control ---
             if current_frame_has_target:
                 GPIO.output(LED_pin, GPIO.HIGH)
             else:
                 GPIO.output(LED_pin, GPIO.LOW)
-            # --- LED 제어 끝 ---
+            # --- LED Control End ---
 
-            # --- 추적 결과 시각화 (디버깅용 print 추가) ---
+            # --- Visualize Tracking Results ---
             annotated_frame = frame.copy()
 
             for track_info in tracked_objects:
@@ -241,6 +258,7 @@ def generate_frames():
 
                     is_valid_bbox = x2 > x1 and y2 > y1
 
+                    # 이 print들이 나오는지 확인하여 시각화 루프 안으로 진입했는지 봅니다.
                     print(f"Track ID {track_id}: Raw Coords = ({track_info[0]:.2f}, {track_info[1]:.2f}, {track_info[2]:.2f}, {track_info[3]:.2f})")
                     print(f"Track ID {track_id}: Int Coords = ({x1}, {y1}, {x2}, {y2}), Valid = {is_valid_bbox}")
 
@@ -271,9 +289,9 @@ def generate_frames():
                     cv2.rectangle(annotated_frame, (text_x, text_y - text_height), (text_x + text_width, text_y), color, -1)
                     cv2.putText(annotated_frame, label, (text_x, text_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
-            # --- 추적 결과 시각화 끝 ---
+            # --- Visualize Tracking Results End ---
 
-            # --- 프레임 인코딩 및 전송 ---
+            # --- Encode and Yield Frame ---
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             if not ret:
                 print("Failed to encode frame.")
@@ -283,7 +301,7 @@ def generate_frames():
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            # --- 프레임 인코딩 및 전송 끝 ---
+            # --- Encode and Yield Frame End ---
 
     except Exception as e:
         print(f"Error in generate_frames: {e}")
